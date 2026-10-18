@@ -1,20 +1,18 @@
 #import "uYouPlus.h"
-#import <YouTubeHeader/MLHAMQueuePlayer.h>
 #import <YouTubeHeader/YTMainAppControlsOverlayView.h>
 #import <YouTubeHeader/YTMainAppVideoPlayerOverlayViewController.h>
 #import <YouTubeHeader/YTPlayerViewController.h>
 #import <YouTubeHeader/YTSingleVideoController.h>
 #import <YouTubeHeader/YTVarispeedSwitchControllerDelegate.h>
 
-// [−] 1.25x [+] speed controls on the left of the player, stepping 0.25x from 0.25x up to 5x.
-// Tapping the speed label resets to 1x. Also lifts YouTube's own playback rate cap to 5x.
+// Vertical + / 1.25× / − speed pill on the left edge of the player (as in YTPlus), stepping 0.25x
+// from 0.25x up to 5x. Tapping the speed resets to 1x. Also lifts YouTube's own playback rate cap to 5x.
 
 #define SPEED_STEP 0.25f
 #define SPEED_MIN 0.25f
 #define SPEED_MAX 5.0f
-#define SPEED_BUTTON_SIZE 32.0f
-#define SPEED_LABEL_WIDTH 54.0f
-#define SPEED_CONTAINER_HEIGHT 34.0f
+#define SPEED_PILL_WIDTH 46.0f
+#define SPEED_ROW_HEIGHT 36.0f
 
 static NSString *const SpeedStepRateDidChangeNotification = @"SpeedStepRateDidChangeNotification";
 static float lastKnownRate = 1.0f;
@@ -33,7 +31,15 @@ static float lastKnownRate = 1.0f;
 @end
 
 static NSString *speedStepText(float rate) {
-    return [NSString stringWithFormat:@"%.2fx", rate];
+    static NSNumberFormatter *formatter;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        formatter = [[NSNumberFormatter alloc] init];
+        formatter.numberStyle = NSNumberFormatterDecimalStyle;
+        formatter.minimumFractionDigits = 0;
+        formatter.maximumFractionDigits = 2;
+    });
+    return [NSString stringWithFormat:@"%@×", [formatter stringFromNumber:@(rate)]];
 }
 
 static YTMainAppVideoPlayerOverlayViewController *speedStepController(YTMainAppControlsOverlayView *self) {
@@ -81,35 +87,39 @@ static UIButton *speedStepIconButton(NSString *symbol, NSString *accessibilityLa
 }
 
 static UIView *speedStepBuildContainer(YTMainAppControlsOverlayView *self) {
-    CGFloat width = SPEED_BUTTON_SIZE * 2 + SPEED_LABEL_WIDTH;
-    UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, SPEED_CONTAINER_HEIGHT)];
+    UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, SPEED_PILL_WIDTH, SPEED_ROW_HEIGHT * 3)];
     container.alpha = 0;
 
+    // Sits flush against the left edge, so only the right-hand corners are rounded.
     UIVisualEffectView *background = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark]];
     background.frame = container.bounds;
-    background.layer.cornerRadius = SPEED_CONTAINER_HEIGHT / 2;
+    background.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    background.layer.cornerRadius = SPEED_PILL_WIDTH / 2;
+    background.layer.maskedCorners = kCALayerMaxXMinYCorner | kCALayerMaxXMaxYCorner;
     background.clipsToBounds = YES;
     background.userInteractionEnabled = NO;
     [container addSubview:background];
 
-    UIButton *minus = speedStepIconButton(@"minus", @"Decrease playback speed");
-    minus.frame = CGRectMake(0, (SPEED_CONTAINER_HEIGHT - SPEED_BUTTON_SIZE) / 2, SPEED_BUTTON_SIZE, SPEED_BUTTON_SIZE);
-    [minus addTarget:self action:@selector(speedStepDidPressMinus:) forControlEvents:UIControlEventTouchUpInside];
-    [container addSubview:minus];
+    UIButton *plus = speedStepIconButton(@"plus", @"Increase playback speed");
+    plus.frame = CGRectMake(0, 0, SPEED_PILL_WIDTH, SPEED_ROW_HEIGHT);
+    [plus addTarget:self action:@selector(speedStepDidPressPlus:) forControlEvents:UIControlEventTouchUpInside];
+    [container addSubview:plus];
 
     UIButton *label = [UIButton buttonWithType:UIButtonTypeCustom];
-    label.frame = CGRectMake(SPEED_BUTTON_SIZE, 0, SPEED_LABEL_WIDTH, SPEED_CONTAINER_HEIGHT);
+    label.frame = CGRectMake(0, SPEED_ROW_HEIGHT, SPEED_PILL_WIDTH, SPEED_ROW_HEIGHT);
     label.titleLabel.font = [UIFont monospacedDigitSystemFontOfSize:14 weight:UIFontWeightSemibold];
+    label.titleLabel.adjustsFontSizeToFitWidth = YES;
+    label.titleLabel.minimumScaleFactor = 0.75;
     [label setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     [label setTitle:speedStepText(speedStepCurrentRate(speedStepController(self))) forState:UIControlStateNormal];
     label.accessibilityLabel = @"Reset playback speed";
     [label addTarget:self action:@selector(speedStepDidPressReset:) forControlEvents:UIControlEventTouchUpInside];
     [container addSubview:label];
 
-    UIButton *plus = speedStepIconButton(@"plus", @"Increase playback speed");
-    plus.frame = CGRectMake(SPEED_BUTTON_SIZE + SPEED_LABEL_WIDTH, (SPEED_CONTAINER_HEIGHT - SPEED_BUTTON_SIZE) / 2, SPEED_BUTTON_SIZE, SPEED_BUTTON_SIZE);
-    [plus addTarget:self action:@selector(speedStepDidPressPlus:) forControlEvents:UIControlEventTouchUpInside];
-    [container addSubview:plus];
+    UIButton *minus = speedStepIconButton(@"minus", @"Decrease playback speed");
+    minus.frame = CGRectMake(0, SPEED_ROW_HEIGHT * 2, SPEED_PILL_WIDTH, SPEED_ROW_HEIGHT);
+    [minus addTarget:self action:@selector(speedStepDidPressMinus:) forControlEvents:UIControlEventTouchUpInside];
+    [container addSubview:minus];
 
     self.speedStepLabel = label;
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(speedStepRefresh:) name:SpeedStepRateDidChangeNotification object:nil];
@@ -143,21 +153,9 @@ static void speedStepSetVisible(YTMainAppControlsOverlayView *self, BOOL visible
     }
     UIView *container = self.speedStepContainer;
     UIView *playPause = speedStepIvarView(self, @"_playPauseButton");
-    UIView *previous = speedStepIvarView(self, @"_previousButtonView");
-
     CGFloat centerY = playPause.superview ? [playPause.superview convertPoint:playPause.center toView:self].y : CGRectGetMidY(self.bounds);
-    CGFloat left = self.safeAreaInsets.left + 12;
-    // Stay clear of the previous-video button; shrink a little on narrow players rather than overlap it.
-    CGFloat limit = previous.superview && !previous.hidden && previous.alpha > 0
-        ? CGRectGetMinX([previous.superview convertRect:previous.frame toView:self]) - 8
-        : CGRectGetMidX(self.bounds) - 48;
-    CGFloat width = SPEED_BUTTON_SIZE * 2 + SPEED_LABEL_WIDTH;
-    CGFloat scale = MIN(1, MAX(0.7, (limit - left) / width));
-
-    container.transform = CGAffineTransformIdentity;
-    container.frame = CGRectMake(0, 0, width, SPEED_CONTAINER_HEIGHT);
-    container.transform = CGAffineTransformMakeScale(scale, scale);
-    container.center = CGPointMake(left + width * scale / 2, centerY);
+    CGFloat height = SPEED_ROW_HEIGHT * 3;
+    container.frame = CGRectMake(self.safeAreaInsets.left, centerY - height / 2, SPEED_PILL_WIDTH, height);
     [self bringSubviewToFront:container];
 }
 
@@ -211,7 +209,10 @@ static void speedStepSetVisible(YTMainAppControlsOverlayView *self, BOOL visible
 %hook YTPlaybackSpeedUtils
 
 + (id)clampPlaybackRateModel:(id)model minPlaybackRate:(double)minRate maxPlaybackRate:(double)maxRate qoePingController:(id)qoePingController shouldLogError:(BOOL)shouldLogError {
-    return %orig(model, MIN(minRate, SPEED_MIN), MAX(maxRate, SPEED_MAX), qoePingController, shouldLogError);
+    // Logos splits %orig arguments on commas, so keep macro calls out of the argument list.
+    double lowestRate = MIN(minRate, SPEED_MIN);
+    double highestRate = MAX(maxRate, SPEED_MAX);
+    return %orig(model, lowestRate, highestRate, qoePingController, shouldLogError);
 }
 
 %end
@@ -219,7 +220,8 @@ static void speedStepSetVisible(YTMainAppControlsOverlayView *self, BOOL visible
 %hook YTSingleVideoController
 
 - (float)maximumSupportedPlaybackRate {
-    return MAX(%orig, SPEED_MAX);
+    float rate = %orig;
+    return MAX(rate, SPEED_MAX);
 }
 
 %end
@@ -227,7 +229,8 @@ static void speedStepSetVisible(YTMainAppControlsOverlayView *self, BOOL visible
 %hook MLHAMQueuePlayer
 
 - (float)maximumSupportedPlaybackRate {
-    return MAX(%orig, SPEED_MAX);
+    float rate = %orig;
+    return MAX(rate, SPEED_MAX);
 }
 
 %end
