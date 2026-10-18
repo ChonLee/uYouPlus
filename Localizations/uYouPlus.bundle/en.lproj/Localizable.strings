@@ -37,6 +37,8 @@
 // Video player options
 "VIDEO_PLAYER_OPTIONS" = "⏯️ Video player options";
 
+"SPEED_STEP_BUTTONS" = "Speed buttons (− / +)";
+"SPEED_STEP_BUTTONS_DESC" = "Shows − 1.00x + controls on the left of the player. Each tap changes speed by 0.25x, up to 5x. Tap the speed to reset to 1x.";
 "SLIDE_TO_SEEK" = "Enable Slide to seek";
 "SLIDE_TO_SEEK_DESC" = "Bring back the Slide to seek gesture.";
 

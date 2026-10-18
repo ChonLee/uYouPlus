@@ -3,7 +3,7 @@
 
 NSArray *NSUserDefaultsCopyKeys = @[
     kReplaceCopyandPasteButtons, kAppTheme, kOLEDKeyboard,
-    kPortraitFullscreen, kFullscreenToTheRight, kSlideToSeek,
+    kPortraitFullscreen, kFullscreenToTheRight, kSpeedStepButtons, kSlideToSeek,
     kYTTapToSeek, kDoubleTapToSeek, kSnapToChapter, kPinchToZoom,
     kYTMiniPlayer, kStockVolumeHUD, kReplaceYTDownloadWithuYou,
     kDisablePullToFull, kDisableChapterSkip, kAlwaysShowRemainingTime,
